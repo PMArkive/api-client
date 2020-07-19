@@ -12,6 +12,8 @@ pub enum Error {
     InvalidBaseUrl(#[source] reqwest::Error),
     #[error("Request failed: {0}")]
     Request(#[from] reqwest::Error),
+    #[error("Invalid page requested")]
+    InvalidPage,
     #[error("MD5 digest mismatch for downloaded demo, expected {expected:?}, received {got:?}")]
     DigestMismatch { expected: [u8; 16], got: [u8; 16] },
 }
@@ -77,25 +79,25 @@ impl UserRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct User {
-    id: u32,
+    pub id: u32,
     #[serde(rename = "steamid")]
-    steam_id: SteamID,
-    name: String,
-    avatar: String,
+    pub steam_id: SteamID,
+    pub name: String,
+    pub avatar: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Player {
     #[serde(rename = "id")]
-    player_id: u32,
+    pub player_id: u32,
     #[serde(flatten)]
     #[serde(deserialize_with = "deserialize_nested_user")]
-    user: User,
-    team: Team,
-    class: Class,
-    kills: u8,
-    assists: u8,
-    deaths: u8,
+    pub user: User,
+    pub team: Team,
+    pub class: Class,
+    pub kills: u8,
+    pub assists: u8,
+    pub deaths: u8,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -158,6 +160,13 @@ fn hex_to_digest<'de, D>(deserializer: D) -> Result<[u8; 16], D::Error>
     <[u8; 16]>::from_hex(string).map_err(|err| Error::custom(err.to_string()))
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct ChatMessage {
+    pub user: String,
+    pub time: u32,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(into = "&str")]
 pub enum ListOrder {
@@ -216,13 +225,34 @@ impl Default for ApiClient {
     }
 }
 
+/// Api client for demos.tf
+///
+/// # Example
+///
+/// ```rust
+/// use demostf_client::{ListOrder, ListParams, ApiClient};
+///
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), demostf_client::Error> {
+/// let client = ApiClient::new();
+///
+/// let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await?;
+///
+/// for demo in demos {
+///     println!("{}: {}", demo.id, demo.name);
+/// }
+/// # Ok(())
+/// # }
+/// ```
 impl ApiClient {
     const DEMOS_TF_BASE_URL: &'static str = "https://api.demos.tf";
 
+    /// Create an api client for the default demos.tf endpoint
     pub fn new() -> Self {
         ApiClient::with_base_url(ApiClient::DEMOS_TF_BASE_URL).unwrap()
     }
 
+    /// Create an api client using a different api endpoint
     pub fn with_base_url(base_url: impl IntoUrl) -> Result<Self, Error> {
         Ok(ApiClient {
             client: Client::new(),
@@ -230,7 +260,33 @@ impl ApiClient {
         })
     }
 
+    /// List demos with the provided options
+    ///
+    /// note that the pages start counting at 1
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use demostf_client::{ListOrder, ListParams};
+    /// # use demostf_client::ApiClient;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), demostf_client::Error> {
+    /// # let client = ApiClient::default();
+    /// #
+    /// let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await?;
+    ///
+    /// for demo in demos {
+    ///     println!("{}: {}", demo.id, demo.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list(&self, params: ListParams, page: u32) -> Result<Vec<Demo>, Error> {
+        if page == 0 {
+            return Err(Error::InvalidPage);
+        }
+
         let mut url = self.base_url.clone();
         url.set_path("/demos");
         Ok(self.client.get(url)
@@ -242,6 +298,28 @@ impl ApiClient {
             .await?)
     }
 
+    /// Get the data for a single demo
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use demostf_client::ApiClient;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), demostf_client::Error> {
+    /// # let client = ApiClient::default();
+    /// #
+    /// let demo = client.get(9).await?;
+    ///
+    /// println!("{}: {}", demo.id, demo.name);
+    /// println!("players:");
+    ///
+    /// for player in demo.players {
+    ///     println!("{}", player.user.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}", demo_id));
@@ -252,9 +330,56 @@ impl ApiClient {
             .await?)
     }
 
+
+    /// Get user info by id
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use demostf_client::ApiClient;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), demostf_client::Error> {
+    /// # let client = ApiClient::default();
+    /// #
+    /// let user = client.get_user(1).await?;
+    ///
+    /// println!("{} ({})", user.name, user.steam_id.steam3());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_user(&self, user_id: u32) -> Result<User, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/users/{}", user_id));
+        Ok(self.client.get(url)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// List demos with the provided options
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use demostf_client::ApiClient;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), demostf_client::Error> {
+    /// # let client = ApiClient::default();
+    /// #
+    /// let chat = client.get_chat(447678).await?;
+    ///
+    /// for message in chat {
+    ///     println!("{}: {}", message.user, message.message);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_chat(&self, demo_id: u32) -> Result<Vec<ChatMessage>, Error> {
+        let mut url = self.base_url.clone();
+        url.set_path(&format!("/demos/{}/chat", demo_id));
         Ok(self.client.get(url)
             .send()
             .await?
@@ -292,5 +417,18 @@ mod tests {
 
         assert_eq!(demo.players[0].player_id, 623);
         assert_eq!(demo.players[0].user.id, 346);
+    }
+
+    #[tokio::test]
+    async fn test_get_chat() {
+        let client = ApiClient::default();
+
+        let chat = client.get_chat(447678).await.unwrap();
+
+        assert_eq!(chat.len(), 10);
+
+        assert_eq!(chat[0].user, "wiitabix");
+        assert_eq!(chat[0].time, 5);
+        assert_eq!(chat[0].message, "gl hf :)))))");
     }
 }
