@@ -14,8 +14,6 @@ pub enum Error {
     Request(#[from] reqwest::Error),
     #[error("Invalid page requested")]
     InvalidPage,
-    #[error("MD5 digest mismatch for downloaded demo, expected {expected:?}, received {got:?}")]
-    DigestMismatch { expected: [u8; 16], got: [u8; 16] },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -41,7 +39,20 @@ pub struct Demo {
     pub backend: String,
     pub path: String,
     #[serde(default)]
+    /// Demos listed using `ApiClient::list` will not have any players set
     pub players: Vec<Player>,
+}
+
+impl Demo {
+    /// Return either the stored players info or get the players from the api
+    pub async fn get_players<'a>(&'a self, client: &ApiClient) -> Result<Cow<'a, [Player]>, Error> {
+        if self.players.len() > 0 {
+            Ok(Cow::Borrowed(self.players.as_slice()))
+        } else {
+            let demo = client.get(self.id).await?;
+            Ok(Cow::Owned(demo.players))
+        }
+    }
 }
 
 /// Reference to a user, either contains the full user information or only the user id
@@ -214,6 +225,7 @@ impl ListParams {
     }
 }
 
+#[derive(Clone)]
 pub struct ApiClient {
     client: Client,
     base_url: Url,
@@ -430,5 +442,15 @@ mod tests {
         assert_eq!(chat[0].user, "wiitabix");
         assert_eq!(chat[0].time, 5);
         assert_eq!(chat[0].message, "gl hf :)))))");
+    }
+
+    #[tokio::test]
+    async fn test_get_players() {
+        let client = ApiClient::default();
+
+        let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await.unwrap();
+
+        assert_eq!(demos[0].players.len(), 0);
+        assert_eq!(demos[0].get_players(&client).await.unwrap().len(), 12);
     }
 }
