@@ -405,13 +405,13 @@ impl ApiClient {
             .await?)
     }
 
-    pub async fn set_url(&self, demo_id: u32, backend: &str, path: &str, url: &str, hash: &str, key: &str) -> Result<(), Error> {
+    pub async fn set_url(&self, demo_id: u32, backend: &str, path: &str, url: &str, hash: [u8; 16], key: &str) -> Result<(), Error> {
         let mut api_url = self.base_url.clone();
         api_url.set_path(&format!("/demos/{}/url", demo_id));
 
         let respose = self.client.post(api_url)
             .form(&[
-                ("hash", hash),
+                ("hash", hex::encode(hash).as_str()),
                 ("backend", backend),
                 ("url", url),
                 ("path", path),
@@ -487,7 +487,7 @@ mod tests {
     async fn test_set_url_invalid_key() {
         let client = ApiClient::default();
 
-        let res = client.set_url(9, "test", "test", "http://example.com/test", "dummy", "wrong").await;
+        let res = client.set_url(9, "test", "test", "http://example.com/test", [0; 16], "wrong").await;
         assert!(matches!(res.unwrap_err(), Error::InvalidApiKey));
     }
 }
