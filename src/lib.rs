@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{Client, IntoUrl, Url, StatusCode};
 use thiserror::Error;
 use steamid_ng::SteamID;
 use std::borrow::Cow;
@@ -14,6 +14,12 @@ pub enum Error {
     Request(#[from] reqwest::Error),
     #[error("Invalid page requested")]
     InvalidPage,
+    #[error("Invalid api key")]
+    InvalidApiKey,
+    #[error("Hash mismatch")]
+    HashMisMatch,
+    #[error("Unknown server error")]
+    ServerError(u16),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -398,11 +404,34 @@ impl ApiClient {
             .json()
             .await?)
     }
+
+    pub async fn set_url(&self, demo_id: u32, backend: &str, path: &str, url: &str, hash: &str, key: &str) -> Result<(), Error> {
+        let mut api_url = self.base_url.clone();
+        api_url.set_path(&format!("/demos/{}/url", demo_id));
+
+        let respose = self.client.post(api_url)
+            .form(&[
+                ("hash", hash),
+                ("backend", backend),
+                ("url", url),
+                ("path", path),
+                ("key", key)
+            ])
+            .send()
+            .await?;
+
+        match respose.status() {
+            StatusCode::UNAUTHORIZED => Err(Error::InvalidApiKey),
+            StatusCode::PRECONDITION_FAILED => Err(Error::HashMisMatch),
+            _ if respose.status().is_server_error() => Err(Error::ServerError(respose.status().as_u16())),
+            _ => Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{ApiClient, ListParams, ListOrder};
+    use crate::{ApiClient, ListParams, ListOrder, Error};
     use steamid_ng::SteamID;
 
     #[tokio::test]
@@ -452,5 +481,13 @@ mod tests {
 
         assert_eq!(demos[0].players.len(), 0);
         assert_eq!(demos[0].get_players(&client).await.unwrap().len(), 12);
+    }
+
+    #[tokio::test]
+    async fn test_set_url_invalid_key() {
+        let client = ApiClient::default();
+
+        let res = client.set_url(9, "test", "test", "http://example.com/test", "dummy", "wrong").await;
+        assert!(matches!(res.unwrap_err(), Error::InvalidApiKey));
     }
 }

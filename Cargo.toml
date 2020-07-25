@@ -3,8 +3,9 @@ name = "demostf-client"
 version = "0.1.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Api client for demos.tf"
+repository = "https://github.com/demostf/api-client"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
