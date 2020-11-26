@@ -18,3 +18,4 @@ steamid-ng = "0.3"
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["macros"] }
+sqlx = { version = "0.4", features = ["postgres", "runtime-tokio-rustls"] }

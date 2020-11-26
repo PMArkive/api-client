@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
-use reqwest::{Client, IntoUrl, Url, StatusCode};
+use reqwest::{Client, IntoUrl, Url, StatusCode, multipart};
 use thiserror::Error;
 use steamid_ng::SteamID;
 use std::borrow::Cow;
+use std::str::FromStr;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -20,6 +21,8 @@ pub enum Error {
     HashMisMatch,
     #[error("Unknown server error")]
     ServerError(u16),
+    #[error("Invalid response: {0}")]
+    InvalidResponse(String),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -427,7 +430,32 @@ impl ApiClient {
             _ => Ok(())
         }
     }
-}
 
-#[cfg(test)]
-mod tests;
+    pub async fn upload_demo(&self, file_name: String, body: Vec<u8>, red: String, blue: String, key: String) -> Result<u32, Error> {
+        let form = multipart::Form::new()
+            .text("red", red)
+            .text("blue", blue)
+            .text("name", file_name)
+            .text("key", key);
+
+        let file = multipart::Part::bytes(body)
+            .file_name("demo.dem")
+            .mime_str("text/plain")?;
+
+        let form = form.part("demo", file);
+
+        let resp = self.client.post(self.base_url.join("/upload").unwrap())
+            .multipart(form)
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        if resp == "Invalid key" {
+            return Err(Error::InvalidApiKey)
+        }
+
+        let tail = resp.split('/').last().unwrap_or_default();
+        u32::from_str(tail).map_err(|_| Error::InvalidResponse(resp))
+    }
+}
