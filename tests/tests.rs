@@ -146,12 +146,12 @@ async fn test_get_demo() {
         SteamID::from(76561198024494988)
     );
 
-    let players = &demo.players;
-    dbg!(players);
+    let mut players = demo.players;
+    players.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
-    assert_eq!(demo.players[0].player_id, 1);
-    assert_eq!(demo.players[0].user.id, 2);
-    assert_eq!(demo.players[0].user.name, "distraughtduck4");
+    assert_eq!(players[0].player_id, 1);
+    assert_eq!(players[0].user.id, 2);
+    assert_eq!(players[0].user.name, "distraughtduck4");
 }
 
 #[tokio::test]
@@ -186,7 +186,7 @@ async fn test_set_url_invalid_key() {
 
     let res = client
         .set_url(
-            9,
+            1,
             "tests",
             "tests",
             "http://example.com/tests",

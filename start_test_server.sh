@@ -13,5 +13,4 @@ docker run -d --name api-test-fpm --link api-test-db:db -v /tmp/api-test-data:/d
   -e DB_HOST=db -e DB_PORT=5432 -e DB_DATABASE=postgres -e DB_USERNAME=postgres \
   -e DB_PASSWORD=test -e APP_ROOT=http://api.localhost -e EDIT_SECRET=edit \
   demostf/api
-docker run -d --name api-test --link api-test-fpm:api\
-     -v $(pwd)/nginx_test.conf:/etc/nginx/conf.d/api.conf:ro -p 8888:80 nginx
+docker run -d --name api-test --link api-test-fpm:api -p 8888:80 demostf/api-nginx-test
