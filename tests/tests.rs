@@ -1,19 +1,45 @@
-use demostf_client::{ApiClient, ListParams, ListOrder, Error};
-use steamid_ng::SteamID;
+use demostf_client::{ApiClient, Error, ListOrder, ListParams};
 use sqlx::postgres::PgPoolOptions;
+use std::sync::atomic::{AtomicBool, Ordering};
+use steamid_ng::SteamID;
 
-async fn test_client() -> ApiClient {
+static SETUP_DONE: AtomicBool = AtomicBool::new(false);
+
+async fn setup() {
+    if SETUP_DONE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let db_url = std::env::var("DB_URL")
+        .unwrap_or_else(|_| "postgres://postgres:test@localhost:15432/postgres".to_string());
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect("postgres://postgres:test@localhost:15432/postgres").await.unwrap();
+        .connect(&db_url)
+        .await
+        .unwrap();
 
-    let tables = ["chat", "demos", "kills", "players", "storage_keys", "teams", "upload_blacklist", "users"];
+    let tables = [
+        "chat",
+        "demos",
+        "kills",
+        "players",
+        "storage_keys",
+        "teams",
+        "upload_blacklist",
+        "users",
+    ];
 
     let mut transaction = pool.begin().await.unwrap();
 
     for table in &tables {
-        sqlx::query(&format!("TRUNCATE TABLE {}", table)).execute(&mut transaction).await.unwrap();
-        sqlx::query(&format!("ALTER SEQUENCE {}_id_seq RESTART with 1", table)).execute(&mut transaction).await.unwrap();
+        sqlx::query(&format!("TRUNCATE TABLE {}", table))
+            .execute(&mut transaction)
+            .await
+            .unwrap();
+        sqlx::query(&format!("ALTER SEQUENCE {}_id_seq RESTART with 1", table))
+            .execute(&mut transaction)
+            .await
+            .unwrap();
     }
 
     sqlx::query("INSERT INTO users(steamid, name, avatar, token)\
@@ -22,7 +48,20 @@ async fn test_client() -> ApiClient {
 
     transaction.commit().await.unwrap();
 
-    ApiClient::with_base_url("http://localhost:8888").unwrap()
+    let api_root =
+        std::env::var("API_ROOT").unwrap_or_else(|_| "http://localhost:8888".to_string());
+
+    let client = ApiClient::with_base_url(&api_root).unwrap();
+
+    upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
+}
+
+async fn test_client() -> ApiClient {
+    setup().await;
+    let api_root =
+        std::env::var("API_ROOT").unwrap_or_else(|_| "http://localhost:8888".to_string());
+
+    ApiClient::with_base_url(&api_root).unwrap()
 }
 
 #[tokio::test]
@@ -36,7 +75,16 @@ async fn test_get_user() {
 async fn upload(client: &ApiClient, source: &str, name: &str, red: &str, blue: &str) -> u32 {
     let data = std::fs::read(source).unwrap();
 
-    client.upload_demo(name.to_string(), data, red.to_string(), blue.to_string(), "test_token".to_string()).await.unwrap()
+    client
+        .upload_demo(
+            name.to_string(),
+            data,
+            red.to_string(),
+            blue.to_string(),
+            "test_token".to_string(),
+        )
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -45,7 +93,16 @@ async fn test_upload_invalid_key() {
 
     let data = std::fs::read("./tests/data/gully.dem").unwrap();
 
-    let err = client.upload_demo("name.dem".to_string(), data, "red".to_string(), "blue".to_string(), "wrong_token".to_string()).await.unwrap_err();
+    let err = client
+        .upload_demo(
+            "name.dem".to_string(),
+            data,
+            "red".to_string(),
+            "blue".to_string(),
+            "wrong_token".to_string(),
+        )
+        .await
+        .unwrap_err();
 
     assert!(matches!(err, Error::InvalidApiKey));
 }
@@ -54,16 +111,17 @@ async fn test_upload_invalid_key() {
 async fn test_list_demos() {
     let client = test_client().await;
 
-
-    let id = upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
-
-    assert_eq!(1, id);
-
-    let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await.unwrap();
+    let demos = client
+        .list(ListParams::default().with_order(ListOrder::Ascending), 1)
+        .await
+        .unwrap();
     assert_eq!(demos[0].id, 1);
     assert_eq!(demos[0].uploader.id(), 1);
     assert!(demos[0].uploader.user().is_none());
-    assert_eq!(demos[0].uploader.resolve(&client).await.unwrap().steam_id, SteamID::from(76561198024494988));
+    assert_eq!(
+        demos[0].uploader.resolve(&client).await.unwrap().steam_id,
+        SteamID::from(76561198024494988)
+    );
 
     assert_eq!(demos[0].player_count, 12);
     assert_eq!(demos[0].name, "test.dem");
@@ -75,14 +133,21 @@ async fn test_list_demos() {
 async fn test_get_demo() {
     let client = test_client().await;
 
-    let id = upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
-
-    let demo = client.get(id).await.unwrap();
-    assert_eq!(demo.id, id);
+    let demo = client.get(1).await.unwrap();
+    assert_eq!(demo.id, 1);
     assert_eq!(demo.uploader.id(), 1);
     assert!(demo.uploader.user().is_some());
-    assert_eq!(demo.uploader.user().unwrap().steam_id, SteamID::from(76561198024494988));
-    assert_eq!(demo.uploader.resolve(&client).await.unwrap().steam_id, SteamID::from(76561198024494988));
+    assert_eq!(
+        demo.uploader.user().unwrap().steam_id,
+        SteamID::from(76561198024494988)
+    );
+    assert_eq!(
+        demo.uploader.resolve(&client).await.unwrap().steam_id,
+        SteamID::from(76561198024494988)
+    );
+
+    let players = &demo.players;
+    dbg!(players);
 
     assert_eq!(demo.players[0].player_id, 1);
     assert_eq!(demo.players[0].user.id, 2);
@@ -92,8 +157,6 @@ async fn test_get_demo() {
 #[tokio::test]
 async fn test_get_chat() {
     let client = test_client().await;
-
-    upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
 
     let chat = client.get_chat(1).await.unwrap();
 
@@ -108,9 +171,10 @@ async fn test_get_chat() {
 async fn test_get_players() {
     let client = test_client().await;
 
-    upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
-
-    let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await.unwrap();
+    let demos = client
+        .list(ListParams::default().with_order(ListOrder::Ascending), 1)
+        .await
+        .unwrap();
 
     assert_eq!(demos[0].players.len(), 0);
     assert_eq!(demos[0].get_players(&client).await.unwrap().len(), 12);
@@ -120,6 +184,15 @@ async fn test_get_players() {
 async fn test_set_url_invalid_key() {
     let client = test_client().await;
 
-    let res = client.set_url(9, "tests", "tests", "http://example.com/tests", [0; 16], "wrong").await;
+    let res = client
+        .set_url(
+            9,
+            "tests",
+            "tests",
+            "http://example.com/tests",
+            [0; 16],
+            "wrong",
+        )
+        .await;
     assert!(matches!(res.unwrap_err(), Error::InvalidApiKey));
 }

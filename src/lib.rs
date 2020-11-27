@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
+use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::fmt;
-use reqwest::{Client, IntoUrl, Url, StatusCode, multipart};
-use thiserror::Error;
-use steamid_ng::SteamID;
 use std::borrow::Cow;
+use std::fmt;
 use std::str::FromStr;
+use steamid_ng::SteamID;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -76,7 +76,7 @@ impl UserRef {
     pub fn id(&self) -> u32 {
         match self {
             UserRef::Id(id) => *id,
-            UserRef::User(User { id, .. }) => *id
+            UserRef::User(User { id, .. }) => *id,
         }
     }
 
@@ -84,7 +84,7 @@ impl UserRef {
     pub fn user(&self) -> Option<&User> {
         match self {
             UserRef::Id(_) => None,
-            UserRef::User(ref user) => Some(user)
+            UserRef::User(ref user) => Some(user),
         }
     }
 
@@ -92,7 +92,7 @@ impl UserRef {
     pub async fn resolve<'a>(&'a self, client: &ApiClient) -> Result<Cow<'a, User>, Error> {
         match self {
             UserRef::User(ref user) => Ok(Cow::Borrowed(user)),
-            UserRef::Id(id) => Ok(Cow::Owned(client.get_user(*id).await?))
+            UserRef::Id(id) => Ok(Cow::Owned(client.get_user(*id).await?)),
         }
     }
 }
@@ -130,8 +130,8 @@ struct NestedPlayerUser {
 }
 
 fn deserialize_nested_user<'de, D>(deserializer: D) -> Result<User, D::Error>
-    where
-        D: Deserializer<'de>,
+where
+    D: Deserializer<'de>,
 {
     let nested = NestedPlayerUser::deserialize(deserializer)?;
     Ok(User {
@@ -165,8 +165,8 @@ pub enum Class {
 
 /// Deserializes a lowercase hex string to a `[u8; 16]`.
 fn hex_to_digest<'de, D>(deserializer: D) -> Result<[u8; 16], D::Error>
-    where
-        D: Deserializer<'de>,
+where
+    D: Deserializer<'de>,
 {
     use hex::FromHex;
     use serde::de::Error;
@@ -310,7 +310,9 @@ impl ApiClient {
 
         let mut url = self.base_url.clone();
         url.set_path("/demos");
-        Ok(self.client.get(url)
+        Ok(self
+            .client
+            .get(url)
             .query(&[("page", page)])
             .query(&params)
             .send()
@@ -344,13 +346,8 @@ impl ApiClient {
     pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}", demo_id));
-        Ok(self.client.get(url)
-            .send()
-            .await?
-            .json()
-            .await?)
+        Ok(self.client.get(url).send().await?.json().await?)
     }
-
 
     /// Get user info by id
     ///
@@ -372,11 +369,7 @@ impl ApiClient {
     pub async fn get_user(&self, user_id: u32) -> Result<User, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/users/{}", user_id));
-        Ok(self.client.get(url)
-            .send()
-            .await?
-            .json()
-            .await?)
+        Ok(self.client.get(url).send().await?.json().await?)
     }
 
     /// List demos with the provided options
@@ -401,24 +394,30 @@ impl ApiClient {
     pub async fn get_chat(&self, demo_id: u32) -> Result<Vec<ChatMessage>, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}/chat", demo_id));
-        Ok(self.client.get(url)
-            .send()
-            .await?
-            .json()
-            .await?)
+        Ok(self.client.get(url).send().await?.json().await?)
     }
 
-    pub async fn set_url(&self, demo_id: u32, backend: &str, path: &str, url: &str, hash: [u8; 16], key: &str) -> Result<(), Error> {
+    pub async fn set_url(
+        &self,
+        demo_id: u32,
+        backend: &str,
+        path: &str,
+        url: &str,
+        hash: [u8; 16],
+        key: &str,
+    ) -> Result<(), Error> {
         let mut api_url = self.base_url.clone();
         api_url.set_path(&format!("/demos/{}/url", demo_id));
 
-        let respose = self.client.post(api_url)
+        let respose = self
+            .client
+            .post(api_url)
             .form(&[
                 ("hash", hex::encode(hash).as_str()),
                 ("backend", backend),
                 ("url", url),
                 ("path", path),
-                ("key", key)
+                ("key", key),
             ])
             .send()
             .await?;
@@ -426,12 +425,21 @@ impl ApiClient {
         match respose.status() {
             StatusCode::UNAUTHORIZED => Err(Error::InvalidApiKey),
             StatusCode::PRECONDITION_FAILED => Err(Error::HashMisMatch),
-            _ if respose.status().is_server_error() => Err(Error::ServerError(respose.status().as_u16())),
-            _ => Ok(())
+            _ if respose.status().is_server_error() => {
+                Err(Error::ServerError(respose.status().as_u16()))
+            }
+            _ => Ok(()),
         }
     }
 
-    pub async fn upload_demo(&self, file_name: String, body: Vec<u8>, red: String, blue: String, key: String) -> Result<u32, Error> {
+    pub async fn upload_demo(
+        &self,
+        file_name: String,
+        body: Vec<u8>,
+        red: String,
+        blue: String,
+        key: String,
+    ) -> Result<u32, Error> {
         let form = multipart::Form::new()
             .text("red", red)
             .text("blue", blue)
@@ -444,7 +452,9 @@ impl ApiClient {
 
         let form = form.part("demo", file);
 
-        let resp = self.client.post(self.base_url.join("/upload").unwrap())
+        let resp = self
+            .client
+            .post(self.base_url.join("/upload").unwrap())
             .multipart(form)
             .send()
             .await?
@@ -452,7 +462,7 @@ impl ApiClient {
             .await?;
 
         if resp == "Invalid key" {
-            return Err(Error::InvalidApiKey)
+            return Err(Error::InvalidApiKey);
         }
 
         let tail = resp.split('/').last().unwrap_or_default();

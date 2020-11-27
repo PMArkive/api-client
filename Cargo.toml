@@ -11,7 +11,7 @@ readme = "README.md"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.10", features = ["json"] }
+reqwest = { version = "0.10", default-features = false, features = ["json", "rustls-tls"] }
 thiserror = "1.0"
 hex = "0.4"
 steamid-ng = "0.3"
