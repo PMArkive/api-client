@@ -147,18 +147,23 @@ async fn test_get_demo() {
     );
 
     let mut players = demo.players;
-    players.sort_by(|a, b| a.player_id.cmp(&b.player_id));
+    players.sort_by(|a, b| {
+        a.user
+            .steam_id
+            .account_id()
+            .cmp(&b.user.steam_id.account_id())
+    });
 
-    assert_eq!(players[0].player_id, 1);
-    assert_eq!(players[0].user.id, 2);
-    assert_eq!(players[0].user.name, "distraughtduck4");
+    assert_eq!(players[0].user.steam_id, SteamID::from(76561198010628997));
+    assert_eq!(players[0].user.name, "freak u ___");
 }
 
 #[tokio::test]
 async fn test_get_chat() {
     let client = test_client().await;
 
-    let chat = client.get_chat(1).await.unwrap();
+    let mut chat = client.get_chat(1).await.unwrap();
+    chat.sort_by(|a, b| a.time.cmp(&b.time));
 
     assert_eq!(chat.len(), 134);
 
