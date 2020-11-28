@@ -162,8 +162,7 @@ async fn test_get_demo() {
 async fn test_get_chat() {
     let client = test_client().await;
 
-    let mut chat = client.get_chat(1).await.unwrap();
-    chat.sort_by(|a, b| a.time.cmp(&b.time));
+    let chat = client.get_chat(1).await.unwrap();
 
     assert_eq!(chat.len(), 134);
 
