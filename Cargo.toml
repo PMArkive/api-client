@@ -1,6 +1,6 @@
 [package]
 name = "demostf-client"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 description = "Api client for demos.tf"
