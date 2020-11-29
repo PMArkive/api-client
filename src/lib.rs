@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
@@ -191,6 +191,18 @@ pub enum ListOrder {
     Descending,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum GameType {
+    #[serde(rename = "hl")]
+    HL,
+    #[serde(rename = "prolander")]
+    Prolander,
+    #[serde(rename = "6v6")]
+    Sixes,
+    #[serde(rename = "4v4")]
+    Fours,
+}
+
 impl Default for ListOrder {
     fn default() -> Self {
         ListOrder::Descending
@@ -216,12 +228,82 @@ impl From<ListOrder> for &str {
 pub struct ListParams {
     order: ListOrder,
     backend: Option<String>,
+    map: Option<String>,
+    players: PlayerList,
+    #[serde(rename = "type")]
+    ty: Option<GameType>,
+    #[serde(serialize_with = "serialize_option_time")]
+    after: Option<DateTime<Utc>>,
+    #[serde(serialize_with = "serialize_option_time")]
+    before: Option<DateTime<Utc>>,
+}
+
+fn serialize_option_time<S>(dt: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match dt {
+        Some(time) => chrono::serde::ts_seconds::serialize(time, serializer),
+        None => Option::<i64>::serialize(&None, serializer),
+    }
+}
+
+#[derive(Default, Debug)]
+struct PlayerList(Vec<u64>);
+
+impl Serialize for PlayerList {
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
+    where
+        S: Serializer,
+    {
+        self.0
+            .iter()
+            .map(|steamid| format!("{}", steamid))
+            .collect::<Vec<_>>()
+            .join(",")
+            .serialize(serializer)
+    }
 }
 
 impl ListParams {
     pub fn with_backend(self, backend: impl ToString) -> Self {
         ListParams {
             backend: Some(backend.to_string()),
+            ..self
+        }
+    }
+
+    pub fn with_map(self, map: impl ToString) -> Self {
+        ListParams {
+            map: Some(map.to_string()),
+            ..self
+        }
+    }
+
+    pub fn with_players(self, players: Vec<u64>) -> Self {
+        ListParams {
+            players: PlayerList(players),
+            ..self
+        }
+    }
+
+    pub fn with_type(self, ty: GameType) -> Self {
+        ListParams {
+            ty: Some(ty),
+            ..self
+        }
+    }
+
+    pub fn with_before(self, before: DateTime<Utc>) -> Self {
+        ListParams {
+            before: Some(before),
+            ..self
+        }
+    }
+
+    pub fn with_after(self, after: DateTime<Utc>) -> Self {
+        ListParams {
+            after: Some(after),
             ..self
         }
     }
