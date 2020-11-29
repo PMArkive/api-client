@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
-use steamid_ng::SteamID;
+pub use steamid_ng::SteamID;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -103,7 +103,6 @@ pub struct User {
     #[serde(rename = "steamid")]
     pub steam_id: SteamID,
     pub name: String,
-    pub avatar: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -126,7 +125,6 @@ struct NestedPlayerUser {
     #[serde(rename = "steamid")]
     steam_id: SteamID,
     name: String,
-    avatar: String,
 }
 
 fn deserialize_nested_user<'de, D>(deserializer: D) -> Result<User, D::Error>
@@ -138,18 +136,17 @@ where
         id: nested.user_id,
         steam_id: nested.steam_id,
         name: nested.name,
-        avatar: nested.avatar,
     })
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialOrd, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Team {
     Red,
     Blue,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialOrd, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Class {
     Scout,
