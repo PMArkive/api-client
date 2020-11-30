@@ -1,5 +1,7 @@
 # api-client
 
+![Build Status](https://github.com/demostf/api-client/workflows/CI/badge.svg)
+
 Rust api client for demos.tf
 
 ## Example
