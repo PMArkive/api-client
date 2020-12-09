@@ -402,6 +402,52 @@ impl ApiClient {
             .await?)
     }
 
+    /// List demos uploaded by a user with the provided options
+    ///
+    /// note that the pages start counting at 1
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use demostf_client::{ListOrder, ListParams};
+    /// # use demostf_client::ApiClient;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), demostf_client::Error> {
+    /// # use steamid_ng::SteamID;
+    /// let client = ApiClient::default();
+    /// #
+    /// let demos = client.list_uploads(SteamID::from(76561198024494988), ListParams::default().with_order(ListOrder::Ascending), 1).await?;
+    ///
+    /// for demo in demos {
+    ///     println!("{}: {}", demo.id, demo.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn list_uploads(
+        &self,
+        uploader: SteamID,
+        params: ListParams,
+        page: u32,
+    ) -> Result<Vec<Demo>, Error> {
+        if page == 0 {
+            return Err(Error::InvalidPage);
+        }
+
+        let mut url = self.base_url.clone();
+        url.set_path(&format!("/uploads/{}", u64::from(uploader)));
+        Ok(self
+            .client
+            .get(url)
+            .query(&[("page", page)])
+            .query(&params)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
     /// Get the data for a single demo
     ///
     /// # Example

@@ -210,3 +210,28 @@ async fn test_get_demo_not_found() {
         Error::DemoNotFound(999)
     ));
 }
+
+#[tokio::test]
+async fn test_list_upload() {
+    let client = test_client().await;
+
+    let demos = client
+        .list_uploads(
+            SteamID::from(76561198024494987),
+            ListParams::default().with_order(ListOrder::Ascending),
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(demos.len(), 0);
+
+    let demos = client
+        .list_uploads(
+            SteamID::from(76561198024494988),
+            ListParams::default().with_order(ListOrder::Ascending),
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(demos[0].id, 1);
+}
