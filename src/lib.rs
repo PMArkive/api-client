@@ -10,7 +10,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Invalid base url: {0}")]
-    InvalidBaseUrl(#[source] reqwest::Error),
+    InvalidBaseUrl(reqwest::Error),
     #[error("Request failed: {0}")]
     Request(#[from] reqwest::Error),
     #[error("Invalid page requested")]
@@ -23,6 +23,8 @@ pub enum Error {
     ServerError(u16),
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
+    #[error("Demo {0} not found")]
+    DemoNotFound(u32),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -425,7 +427,13 @@ impl ApiClient {
     pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}", demo_id));
-        Ok(self.client.get(url).send().await?.json().await?)
+        let response = self.client.get(url).send().await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(Error::DemoNotFound(demo_id));
+        }
+
+        Ok(response.error_for_status()?.json().await?)
     }
 
     /// Get user info by id

@@ -200,3 +200,13 @@ async fn test_set_url_invalid_key() {
         .await;
     assert!(matches!(res.unwrap_err(), Error::InvalidApiKey));
 }
+
+#[tokio::test]
+async fn test_get_demo_not_found() {
+    let client = test_client().await;
+
+    assert!(matches!(
+        dbg!(client.get(999).await.unwrap_err()),
+        Error::DemoNotFound(999)
+    ));
+}
