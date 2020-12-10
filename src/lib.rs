@@ -251,7 +251,7 @@ where
 }
 
 #[derive(Default, Debug)]
-struct PlayerList(Vec<u64>);
+struct PlayerList(Vec<SteamID>);
 
 impl Serialize for PlayerList {
     fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
@@ -260,7 +260,7 @@ impl Serialize for PlayerList {
     {
         self.0
             .iter()
-            .map(|steamid| format!("{}", steamid))
+            .map(|steamid| format!("{}", u64::from(*steamid)))
             .collect::<Vec<_>>()
             .join(",")
             .serialize(serializer)
@@ -282,9 +282,9 @@ impl ListParams {
         }
     }
 
-    pub fn with_players(self, players: Vec<u64>) -> Self {
+    pub fn with_players<T: Into<SteamID>, I: IntoIterator<Item = T>>(self, players: I) -> Self {
         ListParams {
-            players: PlayerList(players),
+            players: PlayerList(players.into_iter().map(Into::into).collect()),
             ..self
         }
     }
