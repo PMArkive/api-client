@@ -57,7 +57,7 @@ pub struct Demo {
 impl Demo {
     /// Return either the stored players info or get the players from the api
     pub async fn get_players<'a>(&'a self, client: &ApiClient) -> Result<Cow<'a, [Player]>, Error> {
-        if self.players.len() > 0 {
+        if !self.players.is_empty() {
             Ok(Cow::Borrowed(self.players.as_slice()))
         } else {
             let demo = client.get(self.id).await?;
@@ -172,7 +172,7 @@ where
 
     let string = <&str>::deserialize(deserializer)?;
 
-    if string.len() == 0 {
+    if string.is_empty() {
         return Ok([0; 16]);
     }
 
