@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -6,6 +5,7 @@ use std::fmt;
 use std::str::FromStr;
 pub use steamid_ng::SteamID;
 use thiserror::Error;
+use time::OffsetDateTime;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -37,8 +37,8 @@ pub struct Demo {
     pub duration: u16,
     pub nick: String,
     pub map: String,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub time: DateTime<Utc>,
+    #[serde(with = "time::serde::timestamp")]
+    pub time: OffsetDateTime,
     pub red: String,
     pub blue: String,
     pub red_score: u8,
@@ -235,17 +235,17 @@ pub struct ListParams {
     #[serde(rename = "type")]
     ty: Option<GameType>,
     #[serde(serialize_with = "serialize_option_time")]
-    after: Option<DateTime<Utc>>,
+    after: Option<OffsetDateTime>,
     #[serde(serialize_with = "serialize_option_time")]
-    before: Option<DateTime<Utc>>,
+    before: Option<OffsetDateTime>,
 }
 
-fn serialize_option_time<S>(dt: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_option_time<S>(dt: &Option<OffsetDateTime>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     match dt {
-        Some(time) => chrono::serde::ts_seconds::serialize(time, serializer),
+        Some(time) => time::serde::timestamp::serialize(time, serializer),
         None => Option::<i64>::serialize(&None, serializer),
     }
 }
@@ -296,14 +296,14 @@ impl ListParams {
         }
     }
 
-    pub fn with_before(self, before: DateTime<Utc>) -> Self {
+    pub fn with_before(self, before: OffsetDateTime) -> Self {
         ListParams {
             before: Some(before),
             ..self
         }
     }
 
-    pub fn with_after(self, after: DateTime<Utc>) -> Self {
+    pub fn with_after(self, after: OffsetDateTime) -> Self {
         ListParams {
             after: Some(after),
             ..self

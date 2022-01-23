@@ -1,6 +1,6 @@
 [package]
 name = "demostf-client"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 description = "Api client for demos.tf"
@@ -11,7 +11,7 @@ exclude = [ "tests/data/gully.dem" ]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-chrono = { version = "0.4", features = ["serde"] }
+time = { version = "0.3", features = ["serde"] }
 reqwest = { version = "0.11", default-features = false, features = ["json", "multipart"] }
 thiserror = "1"
 hex = "0.4"
