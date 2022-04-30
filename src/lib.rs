@@ -59,11 +59,11 @@ pub struct Demo {
 impl Demo {
     /// Return either the stored players info or get the players from the api
     pub async fn get_players<'a>(&'a self, client: &ApiClient) -> Result<Cow<'a, [Player]>, Error> {
-        if !self.players.is_empty() {
-            Ok(Cow::Borrowed(self.players.as_slice()))
-        } else {
+        if self.players.is_empty() {
             let demo = client.get(self.id).await?;
             Ok(Cow::Owned(demo.players))
+        } else {
+            Ok(Cow::Borrowed(self.players.as_slice()))
         }
     }
 
@@ -92,8 +92,7 @@ pub enum UserRef {
 impl UserRef {
     pub fn id(&self) -> u32 {
         match self {
-            UserRef::Id(id) => *id,
-            UserRef::User(User { id, .. }) => *id,
+            UserRef::Id(id) | UserRef::User(User { id, .. }) => *id,
         }
     }
 
@@ -283,20 +282,23 @@ impl Serialize for PlayerList {
 }
 
 impl ListParams {
-    pub fn with_backend(self, backend: impl ToString) -> Self {
+    #[must_use]
+    pub fn with_backend(self, backend: impl Into<String>) -> Self {
         ListParams {
-            backend: Some(backend.to_string()),
+            backend: Some(backend.into()),
             ..self
         }
     }
 
-    pub fn with_map(self, map: impl ToString) -> Self {
+    #[must_use]
+    pub fn with_map(self, map: impl Into<String>) -> Self {
         ListParams {
-            map: Some(map.to_string()),
+            map: Some(map.into()),
             ..self
         }
     }
 
+    #[must_use]
     pub fn with_players<T: Into<SteamID>, I: IntoIterator<Item = T>>(self, players: I) -> Self {
         ListParams {
             players: PlayerList(players.into_iter().map(Into::into).collect()),
@@ -304,6 +306,7 @@ impl ListParams {
         }
     }
 
+    #[must_use]
     pub fn with_type(self, ty: GameType) -> Self {
         ListParams {
             ty: Some(ty),
@@ -311,6 +314,7 @@ impl ListParams {
         }
     }
 
+    #[must_use]
     pub fn with_before(self, before: OffsetDateTime) -> Self {
         ListParams {
             before: Some(before),
@@ -318,6 +322,7 @@ impl ListParams {
         }
     }
 
+    #[must_use]
     pub fn with_after(self, after: OffsetDateTime) -> Self {
         ListParams {
             after: Some(after),
@@ -325,6 +330,7 @@ impl ListParams {
         }
     }
 
+    #[must_use]
     pub fn with_order(self, order: ListOrder) -> Self {
         ListParams { order, ..self }
     }

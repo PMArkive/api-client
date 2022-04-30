@@ -8,6 +8,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/demostf/api-client"
 readme = "README.md"
 exclude = [ "tests/data/gully.dem" ]
+keywords = ["tf2", "demo"]
+categories = ["api-bindings"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
