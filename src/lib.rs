@@ -1,3 +1,5 @@
+use bytes::Bytes;
+use futures_util::{Stream, StreamExt};
 use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -63,6 +65,19 @@ impl Demo {
             let demo = client.get(self.id).await?;
             Ok(Cow::Owned(demo.players))
         }
+    }
+
+    pub async fn download(
+        &self,
+        client: &ApiClient,
+    ) -> Result<impl Stream<Item = Result<Bytes, Error>>, Error> {
+        Ok(client
+            .client
+            .get(&self.url)
+            .send()
+            .await?
+            .bytes_stream()
+            .map(|chunk| Ok(chunk?)))
     }
 }
 
