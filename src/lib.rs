@@ -3,18 +3,20 @@ use futures_util::{Stream, StreamExt};
 use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
-use std::fmt;
+use std::fmt::{self, Debug, Display, Formatter};
 use std::str::FromStr;
 pub use steamid_ng::SteamID;
 use thiserror::Error;
 use time::OffsetDateTime;
+use tinyvec::TinyVec;
+use tracing::{debug, instrument};
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Invalid base url: {0}")]
     InvalidBaseUrl(reqwest::Error),
     #[error("Request failed: {0}")]
-    Request(#[from] reqwest::Error),
+    Request(reqwest::Error),
     #[error("Invalid page requested")]
     InvalidPage,
     #[error("Invalid api key")]
@@ -27,6 +29,17 @@ pub enum Error {
     InvalidResponse(String),
     #[error("Demo {0} not found")]
     DemoNotFound(u32),
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(error: reqwest::Error) -> Self {
+        match error.status() {
+            Some(StatusCode::UNAUTHORIZED) => Error::InvalidApiKey,
+            Some(StatusCode::PRECONDITION_FAILED) => Error::HashMisMatch,
+            Some(status) if status.is_server_error() => Error::ServerError(status.as_u16()),
+            _ => Error::Request(error),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -58,7 +71,8 @@ pub struct Demo {
 
 impl Demo {
     /// Return either the stored players info or get the players from the api
-    pub async fn get_players<'a>(&'a self, client: &ApiClient) -> Result<Cow<'a, [Player]>, Error> {
+    #[instrument]
+    pub async fn get_players(&self, client: &ApiClient) -> Result<Cow<'_, [Player]>, Error> {
         if self.players.is_empty() {
             let demo = client.get(self.id).await?;
             Ok(Cow::Owned(demo.players))
@@ -71,6 +85,7 @@ impl Demo {
         &self,
         client: &ApiClient,
     ) -> Result<impl Stream<Item = Result<Bytes, Error>>, Error> {
+        debug!(id = self.id, "starting download");
         Ok(client
             .client
             .get(&self.url)
@@ -105,7 +120,8 @@ impl UserRef {
     }
 
     /// Return either the stored user info or get the user information from the api
-    pub async fn resolve<'a>(&'a self, client: &ApiClient) -> Result<Cow<'a, User>, Error> {
+    #[instrument]
+    pub async fn resolve(&self, client: &ApiClient) -> Result<Cow<'_, User>, Error> {
         match self {
             UserRef::User(ref user) => Ok(Cow::Borrowed(user)),
             UserRef::Id(id) => Ok(Cow::Owned(client.get_user(*id).await?)),
@@ -225,9 +241,9 @@ impl Default for ListOrder {
     }
 }
 
-impl fmt::Display for ListOrder {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <&str>::from(*self).fmt(f)
+impl Display for ListOrder {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(<&str>::from(*self), f)
     }
 }
 
@@ -265,20 +281,53 @@ where
 }
 
 #[derive(Default, Debug)]
-struct PlayerList(Vec<SteamID>);
+struct PlayerList(TinyVec<[SteamID; 2]>);
+
+impl PlayerList {
+    fn new<T: Into<SteamID>, I: IntoIterator<Item = T>>(players: I) -> Self {
+        PlayerList(players.into_iter().map(Into::into).collect())
+    }
+}
+
+impl Display for PlayerList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for steam_id in &self.0 {
+            if first {
+                first = false;
+                write!(f, "{}", u64::from(*steam_id))?;
+            } else {
+                write!(f, ",{}", u64::from(*steam_id))?;
+            }
+        }
+
+        Ok(())
+    }
+}
 
 impl Serialize for PlayerList {
     fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error>
     where
         S: Serializer,
     {
-        self.0
-            .iter()
-            .map(|steamid| format!("{}", u64::from(*steamid)))
-            .collect::<Vec<_>>()
-            .join(",")
-            .serialize(serializer)
+        serializer.collect_str(&self)
     }
+}
+
+#[test]
+fn test_serialize_player_list() {
+    assert_eq!(
+        "76561198024494988",
+        PlayerList::new([76561198024494988]).to_string()
+    );
+    assert_eq!(
+        "76561198024494988,76561197963701107",
+        PlayerList::new([76561198024494988, 76561197963701107]).to_string()
+    );
+    assert_eq!(
+        "76561198024494988,76561197963701107,76561197963701106",
+        PlayerList::new([76561198024494988, 76561197963701107, 76561197963701106]).to_string()
+    );
 }
 
 impl ListParams {
@@ -301,7 +350,7 @@ impl ListParams {
     #[must_use]
     pub fn with_players<T: Into<SteamID>, I: IntoIterator<Item = T>>(self, players: I) -> Self {
         ListParams {
-            players: PlayerList(players.into_iter().map(Into::into).collect()),
+            players: PlayerList::new(players),
             ..self
         }
     }
@@ -345,6 +394,14 @@ pub struct ApiClient {
 impl Default for ApiClient {
     fn default() -> Self {
         ApiClient::new()
+    }
+}
+
+impl Debug for ApiClient {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApiClient")
+            .field("base_url", &self.base_url.to_string())
+            .finish_non_exhaustive()
     }
 }
 
@@ -405,6 +462,7 @@ impl ApiClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[instrument]
     pub async fn list(&self, params: ListParams, page: u32) -> Result<Vec<Demo>, Error> {
         if page == 0 {
             return Err(Error::InvalidPage);
@@ -419,6 +477,7 @@ impl ApiClient {
             .query(&params)
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await?)
     }
@@ -446,6 +505,7 @@ impl ApiClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[instrument]
     pub async fn list_uploads(
         &self,
         uploader: SteamID,
@@ -465,6 +525,7 @@ impl ApiClient {
             .query(&params)
             .send()
             .await?
+            .error_for_status()?
             .json()
             .await?)
     }
@@ -491,6 +552,7 @@ impl ApiClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[instrument]
     pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}", demo_id));
@@ -520,6 +582,7 @@ impl ApiClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[instrument]
     pub async fn get_user(&self, user_id: u32) -> Result<User, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/users/{}", user_id));
@@ -545,12 +608,14 @@ impl ApiClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[instrument]
     pub async fn get_chat(&self, demo_id: u32) -> Result<Vec<ChatMessage>, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}/chat", demo_id));
         Ok(self.client.get(url).send().await?.json().await?)
     }
 
+    #[instrument]
     pub async fn set_url(
         &self,
         demo_id: u32,
@@ -563,8 +628,7 @@ impl ApiClient {
         let mut api_url = self.base_url.clone();
         api_url.set_path(&format!("/demos/{}/url", demo_id));
 
-        let respose = self
-            .client
+        self.client
             .post(api_url)
             .form(&[
                 ("hash", hex::encode(hash).as_str()),
@@ -574,18 +638,13 @@ impl ApiClient {
                 ("key", key),
             ])
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
-        match respose.status() {
-            StatusCode::UNAUTHORIZED => Err(Error::InvalidApiKey),
-            StatusCode::PRECONDITION_FAILED => Err(Error::HashMisMatch),
-            _ if respose.status().is_server_error() => {
-                Err(Error::ServerError(respose.status().as_u16()))
-            }
-            _ => Ok(()),
-        }
+        Ok(())
     }
 
+    #[instrument(skip(body))]
     pub async fn upload_demo(
         &self,
         file_name: String,
@@ -612,6 +671,7 @@ impl ApiClient {
             .multipart(form)
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
 

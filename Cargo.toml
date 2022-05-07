@@ -20,10 +20,13 @@ hex = "0.4"
 steamid-ng = "1"
 bytes = "1.1.0"
 futures-util = "0.3.21"
+tracing = "0.1.33"
+tinyvec = "1.5.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
 sqlx = { version = "0.5", features = ["postgres", "runtime-tokio-rustls"] }
+tracing-subscriber = { version = "0.3.11", features = ["env-filter"] }
 
 [features]
 default = ["default-tls"]

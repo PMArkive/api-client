@@ -2,10 +2,15 @@ use demostf_client::{ApiClient, Error, ListOrder, ListParams};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::atomic::{AtomicBool, Ordering};
 use steamid_ng::SteamID;
+use tracing_subscriber::EnvFilter;
 
 static SETUP_DONE: AtomicBool = AtomicBool::new(false);
 
 async fn setup() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init();
+
     if SETUP_DONE.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -233,4 +238,32 @@ async fn test_list_upload() {
         .await
         .unwrap();
     assert_eq!(demos[0].id, 1);
+}
+
+#[tokio::test]
+async fn test_list_players() {
+    let client = test_client().await;
+
+    let demos = client
+        .list(ListParams::default().with_players([76561198010628997]), 1)
+        .await
+        .unwrap();
+    assert_eq!(demos.len(), 1);
+    assert_eq!(demos[0].id, 1);
+
+    let demos = client
+        .list(
+            ListParams::default().with_players([76561198010628997, 76561198111527393]),
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(demos.len(), 1);
+    assert_eq!(demos[0].id, 1);
+
+    let demos = client
+        .list(ListParams::default().with_players([76561198010628990]), 1)
+        .await
+        .unwrap();
+    assert_eq!(demos.len(), 0);
 }
