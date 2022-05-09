@@ -1,6 +1,6 @@
 [package]
 name = "demostf-client"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 description = "Api client for demos.tf"
@@ -22,6 +22,7 @@ bytes = "1.1.0"
 futures-util = "0.3.21"
 tracing = "0.1.33"
 tinyvec = "1.5.1"
+md5 = "0.7.0"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }

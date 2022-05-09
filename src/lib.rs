@@ -1,15 +1,17 @@
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
+use md5::Context;
 use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::io::Write;
 use std::str::FromStr;
 pub use steamid_ng::SteamID;
 use thiserror::Error;
 use time::OffsetDateTime;
 use tinyvec::TinyVec;
-use tracing::{debug, instrument};
+use tracing::{debug, error, instrument};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -29,6 +31,8 @@ pub enum Error {
     InvalidResponse(String),
     #[error("Demo {0} not found")]
     DemoNotFound(u32),
+    #[error("Error while writing demo data")]
+    Write(#[source] std::io::Error),
 }
 
 impl From<reqwest::Error> for Error {
@@ -85,14 +89,46 @@ impl Demo {
         &self,
         client: &ApiClient,
     ) -> Result<impl Stream<Item = Result<Bytes, Error>>, Error> {
-        debug!(id = self.id, "starting download");
+        debug!(id = self.id, url = display(&self.url), "starting download");
         Ok(client
             .client
             .get(&self.url)
             .send()
             .await?
+            .error_for_status()?
             .bytes_stream()
-            .map(|chunk| Ok(chunk?)))
+            .map(|chunk| chunk.map_err(Error::from)))
+    }
+
+    /// Download a demo and save it to a writer, verifying the md5 hash in the process
+    #[instrument(skip(target))]
+    pub async fn save<W: Write>(&self, client: &ApiClient, mut target: W) -> Result<(), Error> {
+        debug!(id = self.id, url = display(&self.url), "starting download");
+        let mut response = client
+            .client
+            .get(&self.url)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let mut context = Context::new();
+
+        while let Some(chunk) = response.chunk().await? {
+            context.consume(&chunk);
+            target.write_all(&chunk).map_err(Error::Write)?;
+        }
+
+        let calculated = context.compute().0;
+
+        if calculated != self.hash {
+            error!(
+                calculated = display(hex::encode(calculated)),
+                expected = display(hex::encode(self.hash)),
+                "hash mismatch"
+            );
+            return Err(Error::HashMisMatch);
+        }
+        Ok(())
     }
 }
 
@@ -586,7 +622,14 @@ impl ApiClient {
     pub async fn get_user(&self, user_id: u32) -> Result<User, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/users/{}", user_id));
-        Ok(self.client.get(url).send().await?.json().await?)
+        Ok(self
+            .client
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     /// List demos with the provided options
@@ -612,7 +655,14 @@ impl ApiClient {
     pub async fn get_chat(&self, demo_id: u32) -> Result<Vec<ChatMessage>, Error> {
         let mut url = self.base_url.clone();
         url.set_path(&format!("/demos/{}/chat", demo_id));
-        Ok(self.client.get(url).send().await?.json().await?)
+        Ok(self
+            .client
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     #[instrument]

@@ -33,7 +33,7 @@ jobs:
       api:
         image: demostf/api
         env:
-          DEMO_ROOT: /tmp
+          DEMO_ROOT: /demos
           DEMO_HOST: localhost
           DB_TYPE: pgsql
           DB_HOST: api-test-db
@@ -43,12 +43,16 @@ jobs:
           DB_PASSWORD: test
           APP_ROOT: https://api.localhost
           EDIT_SECRET: edit
+        volumes:
+          - /tmp:/demos
       api-test:
         image: demostf/api-nginx-test
         env:
           POSTGRES_PASSWORD: test
         ports:
           - 80:80
+        volumes:
+          - /tmp:/demos
 
     steps:
       - uses: actions/checkout@v2

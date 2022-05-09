@@ -1,5 +1,6 @@
 use demostf_client::{ApiClient, Error, ListOrder, ListParams};
 use sqlx::postgres::PgPoolOptions;
+use std::fs::read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use steamid_ng::SteamID;
 use tracing_subscriber::EnvFilter;
@@ -206,6 +207,47 @@ async fn test_set_url_invalid_key() {
 }
 
 #[tokio::test]
+async fn test_set_url_invalid_hash() {
+    let client = test_client().await;
+
+    let res = client
+        .set_url(
+            1,
+            "tests",
+            "tests",
+            "http://example.com/tests",
+            [0; 16],
+            "edit",
+        )
+        .await;
+    assert!(matches!(res.unwrap_err(), Error::HashMisMatch));
+}
+
+#[tokio::test]
+async fn test_set_url() {
+    let client = test_client().await;
+    let demo = client.get(1).await.unwrap();
+
+    client
+        .set_url(
+            1,
+            "example",
+            "tests",
+            "http://example.com/tests",
+            demo.hash,
+            "edit",
+        )
+        .await
+        .unwrap();
+
+    let moved = client.get(1).await.unwrap();
+
+    assert_eq!(moved.backend, "example");
+    assert_eq!(moved.path, "tests");
+    assert_eq!(moved.url, "http://example.com/tests");
+}
+
+#[tokio::test]
 async fn test_get_demo_not_found() {
     let client = test_client().await;
 
@@ -266,4 +308,25 @@ async fn test_list_players() {
         .await
         .unwrap();
     assert_eq!(demos.len(), 0);
+}
+
+#[tokio::test]
+async fn test_download_demo() {
+    let client = test_client().await;
+
+    let mut demo = client.get(1).await.unwrap();
+
+    let demos_url =
+        std::env::var("API_ROOT").unwrap_or_else(|_| "http://localhost:8888/".to_string());
+
+    // fixup the url to one that is actually usable
+    demo.url = format!(
+        "{}static/01/b2/01b2265d875026b91d59a2785abfd50d_test.dem",
+        demos_url
+    );
+
+    let mut data: Vec<u8> = Vec::new();
+    demo.save(&client, &mut data).await.unwrap();
+
+    assert_eq!(data.len(), read("./tests/data/gully.dem").unwrap().len());
 }
