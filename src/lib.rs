@@ -1,19 +1,22 @@
 use bytes::Bytes;
+pub use client::ApiClient;
 use futures_util::{Stream, StreamExt};
 use md5::Context;
-use reqwest::{multipart, Client, IntoUrl, StatusCode, Url};
+use reqwest::StatusCode;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::io::Write;
-use std::str::FromStr;
 pub use steamid_ng::SteamID;
 use thiserror::Error;
 use time::OffsetDateTime;
 use tinyvec::TinyVec;
 use tracing::{debug, error, instrument};
 
+mod client;
+
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("Invalid base url: {0}")]
     InvalidBaseUrl(reqwest::Error),
@@ -33,21 +36,28 @@ pub enum Error {
     DemoNotFound(u32),
     #[error("Error while writing demo data")]
     Write(#[source] std::io::Error),
+    #[error("Operation timed out")]
+    TimeOut,
 }
 
 impl From<reqwest::Error> for Error {
     fn from(error: reqwest::Error) -> Self {
-        match error.status() {
-            Some(StatusCode::UNAUTHORIZED) => Error::InvalidApiKey,
-            Some(StatusCode::PRECONDITION_FAILED) => Error::HashMisMatch,
-            Some(status) if status.is_server_error() => Error::ServerError(status.as_u16()),
-            _ => Error::Request(error),
+        if error.is_timeout() {
+            Error::TimeOut
+        } else {
+            match error.status() {
+                Some(StatusCode::UNAUTHORIZED) => Error::InvalidApiKey,
+                Some(StatusCode::PRECONDITION_FAILED) => Error::HashMisMatch,
+                Some(status) if status.is_server_error() => Error::ServerError(status.as_u16()),
+                _ => Error::Request(error),
+            }
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Data of an uploaded demo
 pub struct Demo {
     pub id: u32,
     pub url: String,
@@ -70,18 +80,19 @@ pub struct Demo {
     pub path: String,
     #[serde(default)]
     /// Demos listed using `ApiClient::list` will not have any players set
-    pub players: Vec<Player>,
+    pub players: Option<Vec<Player>>,
 }
 
 impl Demo {
     /// Return either the stored players info or get the players from the api
     #[instrument]
     pub async fn get_players(&self, client: &ApiClient) -> Result<Cow<'_, [Player]>, Error> {
-        if self.players.is_empty() {
-            let demo = client.get(self.id).await?;
-            Ok(Cow::Owned(demo.players))
-        } else {
-            Ok(Cow::Borrowed(self.players.as_slice()))
+        match &self.players {
+            Some(players) => Ok(Cow::Borrowed(players.as_slice())),
+            None => {
+                let demo = client.get(self.id).await?;
+                Ok(Cow::Owned(demo.players.unwrap_or_default()))
+            }
         }
     }
 
@@ -91,11 +102,8 @@ impl Demo {
     ) -> Result<impl Stream<Item = Result<Bytes, Error>>, Error> {
         debug!(id = self.id, url = display(&self.url), "starting download");
         Ok(client
-            .client
-            .get(&self.url)
-            .send()
+            .download_demo(&self.url, self.duration)
             .await?
-            .error_for_status()?
             .bytes_stream()
             .map(|chunk| chunk.map_err(Error::from)))
     }
@@ -104,12 +112,7 @@ impl Demo {
     #[instrument(skip(target))]
     pub async fn save<W: Write>(&self, client: &ApiClient, mut target: W) -> Result<(), Error> {
         debug!(id = self.id, url = display(&self.url), "starting download");
-        let mut response = client
-            .client
-            .get(&self.url)
-            .send()
-            .await?
-            .error_for_status()?;
+        let mut response = client.download_demo(&self.url, self.duration).await?;
 
         let mut context = Context::new();
 
@@ -418,318 +421,5 @@ impl ListParams {
     #[must_use]
     pub fn with_order(self, order: ListOrder) -> Self {
         ListParams { order, ..self }
-    }
-}
-
-#[derive(Clone)]
-pub struct ApiClient {
-    client: Client,
-    base_url: Url,
-}
-
-impl Default for ApiClient {
-    fn default() -> Self {
-        ApiClient::new()
-    }
-}
-
-impl Debug for ApiClient {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ApiClient")
-            .field("base_url", &self.base_url.to_string())
-            .finish_non_exhaustive()
-    }
-}
-
-/// Api client for demos.tf
-///
-/// # Example
-///
-/// ```rust
-/// use demostf_client::{ListOrder, ListParams, ApiClient};
-///
-/// # #[tokio::main]
-/// # async fn main() -> Result<(), demostf_client::Error> {
-/// let client = ApiClient::new();
-///
-/// let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await?;
-///
-/// for demo in demos {
-///     println!("{}: {}", demo.id, demo.name);
-/// }
-/// # Ok(())
-/// # }
-/// ```
-impl ApiClient {
-    const DEMOS_TF_BASE_URL: &'static str = "https://api.demos.tf";
-
-    /// Create an api client for the default demos.tf endpoint
-    pub fn new() -> Self {
-        ApiClient::with_base_url(ApiClient::DEMOS_TF_BASE_URL).unwrap()
-    }
-
-    /// Create an api client using a different api endpoint
-    pub fn with_base_url(base_url: impl IntoUrl) -> Result<Self, Error> {
-        Ok(ApiClient {
-            client: Client::new(),
-            base_url: base_url.into_url().map_err(Error::InvalidBaseUrl)?,
-        })
-    }
-
-    /// List demos with the provided options
-    ///
-    /// note that the pages start counting at 1
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use demostf_client::{ListOrder, ListParams};
-    /// # use demostf_client::ApiClient;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), demostf_client::Error> {
-    /// # let client = ApiClient::default();
-    /// #
-    /// let demos = client.list(ListParams::default().with_order(ListOrder::Ascending), 1).await?;
-    ///
-    /// for demo in demos {
-    ///     println!("{}: {}", demo.id, demo.name);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[instrument]
-    pub async fn list(&self, params: ListParams, page: u32) -> Result<Vec<Demo>, Error> {
-        if page == 0 {
-            return Err(Error::InvalidPage);
-        }
-
-        let mut url = self.base_url.clone();
-        url.set_path("/demos");
-        Ok(self
-            .client
-            .get(url)
-            .query(&[("page", page)])
-            .query(&params)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
-    }
-
-    /// List demos uploaded by a user with the provided options
-    ///
-    /// note that the pages start counting at 1
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use demostf_client::{ListOrder, ListParams};
-    /// # use demostf_client::ApiClient;
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), demostf_client::Error> {
-    /// # use steamid_ng::SteamID;
-    /// let client = ApiClient::default();
-    /// #
-    /// let demos = client.list_uploads(SteamID::from(76561198024494988), ListParams::default().with_order(ListOrder::Ascending), 1).await?;
-    ///
-    /// for demo in demos {
-    ///     println!("{}: {}", demo.id, demo.name);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[instrument]
-    pub async fn list_uploads(
-        &self,
-        uploader: SteamID,
-        params: ListParams,
-        page: u32,
-    ) -> Result<Vec<Demo>, Error> {
-        if page == 0 {
-            return Err(Error::InvalidPage);
-        }
-
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/uploads/{}", u64::from(uploader)));
-        Ok(self
-            .client
-            .get(url)
-            .query(&[("page", page)])
-            .query(&params)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
-    }
-
-    /// Get the data for a single demo
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use demostf_client::ApiClient;
-    /// #
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), demostf_client::Error> {
-    /// # let client = ApiClient::default();
-    /// #
-    /// let demo = client.get(9).await?;
-    ///
-    /// println!("{}: {}", demo.id, demo.name);
-    /// println!("players:");
-    ///
-    /// for player in demo.players {
-    ///     println!("{}", player.user.name);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[instrument]
-    pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/demos/{}", demo_id));
-        let response = self.client.get(url).send().await?;
-
-        if response.status() == StatusCode::NOT_FOUND {
-            return Err(Error::DemoNotFound(demo_id));
-        }
-
-        Ok(response.error_for_status()?.json().await?)
-    }
-
-    /// Get user info by id
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use demostf_client::ApiClient;
-    /// #
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), demostf_client::Error> {
-    /// # let client = ApiClient::default();
-    /// #
-    /// let user = client.get_user(1).await?;
-    ///
-    /// println!("{} ({})", user.name, user.steam_id.steam3());
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[instrument]
-    pub async fn get_user(&self, user_id: u32) -> Result<User, Error> {
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/users/{}", user_id));
-        Ok(self
-            .client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
-    }
-
-    /// List demos with the provided options
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use demostf_client::ApiClient;
-    /// #
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), demostf_client::Error> {
-    /// # let client = ApiClient::default();
-    /// #
-    /// let chat = client.get_chat(447678).await?;
-    ///
-    /// for message in chat {
-    ///     println!("{}: {}", message.user, message.message);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[instrument]
-    pub async fn get_chat(&self, demo_id: u32) -> Result<Vec<ChatMessage>, Error> {
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/demos/{}/chat", demo_id));
-        Ok(self
-            .client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
-    }
-
-    #[instrument]
-    pub async fn set_url(
-        &self,
-        demo_id: u32,
-        backend: &str,
-        path: &str,
-        url: &str,
-        hash: [u8; 16],
-        key: &str,
-    ) -> Result<(), Error> {
-        let mut api_url = self.base_url.clone();
-        api_url.set_path(&format!("/demos/{}/url", demo_id));
-
-        self.client
-            .post(api_url)
-            .form(&[
-                ("hash", hex::encode(hash).as_str()),
-                ("backend", backend),
-                ("url", url),
-                ("path", path),
-                ("key", key),
-            ])
-            .send()
-            .await?
-            .error_for_status()?;
-
-        Ok(())
-    }
-
-    #[instrument(skip(body))]
-    pub async fn upload_demo(
-        &self,
-        file_name: String,
-        body: Vec<u8>,
-        red: String,
-        blue: String,
-        key: String,
-    ) -> Result<u32, Error> {
-        let form = multipart::Form::new()
-            .text("red", red)
-            .text("blue", blue)
-            .text("name", file_name)
-            .text("key", key);
-
-        let file = multipart::Part::bytes(body)
-            .file_name("demo.dem")
-            .mime_str("text/plain")?;
-
-        let form = form.part("demo", file);
-
-        let resp = self
-            .client
-            .post(self.base_url.join("/upload").unwrap())
-            .multipart(form)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-
-        if resp == "Invalid key" {
-            return Err(Error::InvalidApiKey);
-        }
-
-        let tail = resp.split('/').last().unwrap_or_default();
-        u32::from_str(tail).map_err(|_| Error::InvalidResponse(resp))
     }
 }
