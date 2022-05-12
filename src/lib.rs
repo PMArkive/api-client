@@ -79,7 +79,8 @@ pub struct Demo {
     pub backend: String,
     pub path: String,
     #[serde(default)]
-    /// Demos listed using `ApiClient::list` will not have any players set
+    /// Demos listed using `ApiClient::list` will not have any players set, use `get_players` to automatically
+    /// load the players when not set
     pub players: Option<Vec<Player>>,
 }
 
@@ -96,6 +97,7 @@ impl Demo {
         }
     }
 
+    /// Download a demo, returning a stream of chunks
     pub async fn download(
         &self,
         client: &ApiClient,
@@ -144,6 +146,7 @@ pub enum UserRef {
 }
 
 impl UserRef {
+    /// Id of the user
     pub fn id(&self) -> u32 {
         match self {
             UserRef::Id(id) | UserRef::User(User { id, .. }) => *id,
@@ -168,6 +171,7 @@ impl UserRef {
     }
 }
 
+/// User data
 #[derive(Clone, Debug, Deserialize)]
 pub struct User {
     pub id: u32,
@@ -176,6 +180,7 @@ pub struct User {
     pub name: String,
 }
 
+/// Data of a player in a demo
 #[derive(Clone, Debug, Deserialize)]
 pub struct Player {
     #[serde(rename = "id")]
@@ -184,6 +189,7 @@ pub struct Player {
     #[serde(deserialize_with = "deserialize_nested_user")]
     pub user: User,
     pub team: Team,
+    /// If a player has played multiple classes, the class which the user spawned the most as is taken
     pub class: Class,
     pub kills: u8,
     pub assists: u8,
@@ -210,6 +216,7 @@ where
     })
 }
 
+/// Player team, red or blue
 #[derive(Clone, Copy, Debug, Deserialize, PartialOrd, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Team {
@@ -217,6 +224,7 @@ pub enum Team {
     Blue,
 }
 
+/// Player class
 #[derive(Clone, Copy, Debug, Deserialize, PartialOrd, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Class {
@@ -248,6 +256,7 @@ where
     <[u8; 16]>::from_hex(string).map_err(|err| Error::custom(err.to_string()))
 }
 
+/// Chat message send in the demo
 #[derive(Clone, Debug, Deserialize)]
 pub struct ChatMessage {
     pub user: String,
@@ -255,6 +264,7 @@ pub struct ChatMessage {
     pub message: String,
 }
 
+/// Order for listing demos
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(into = "&str")]
 pub enum ListOrder {
@@ -262,6 +272,7 @@ pub enum ListOrder {
     Descending,
 }
 
+/// Gametype as recognized by demos.tf, HL, Prolander, 6s or 4v4
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum GameType {
     #[serde(rename = "hl")]
@@ -295,6 +306,7 @@ impl From<ListOrder> for &str {
     }
 }
 
+/// Parameters for demo list command
 #[derive(Debug, Default, Serialize)]
 pub struct ListParams {
     order: ListOrder,
