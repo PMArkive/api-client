@@ -151,7 +151,7 @@ async fn test_get_demo() {
         SteamID::from(76561198024494988)
     );
 
-    let mut players = demo.players;
+    let mut players = demo.players.unwrap();
     players.sort_by(|a, b| {
         a.user
             .steam_id
@@ -185,7 +185,7 @@ async fn test_get_players() {
         .await
         .unwrap();
 
-    assert_eq!(demos[0].players.len(), 0);
+    assert!(demos[0].players.is_none());
     assert_eq!(demos[0].get_players(&client).await.unwrap().len(), 12);
 }
 

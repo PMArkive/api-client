@@ -177,7 +177,7 @@ impl ApiClient {
     /// println!("{}: {}", demo.id, demo.name);
     /// println!("players:");
     ///
-    /// for player in demo.players {
+    /// for player in demo.players.unwrap_or_default() {
     ///     println!("{}", player.user.name);
     /// }
     /// # Ok(())
