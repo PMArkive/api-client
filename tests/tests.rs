@@ -224,6 +224,24 @@ async fn test_set_url_invalid_hash() {
 }
 
 #[tokio::test]
+async fn test_set_url_unknown_demo() {
+    let client = test_client().await;
+
+    let res = client
+        .set_url(
+            99,
+            "tests",
+            "tests",
+            "http://example.com/tests",
+            [0; 16],
+            "edit",
+        )
+        .await;
+    dbg!(&res);
+    assert!(matches!(res.unwrap_err(), Error::DemoNotFound(99)));
+}
+
+#[tokio::test]
 async fn test_set_url() {
     let client = test_client().await;
     let demo = client.get(1).await.unwrap();

@@ -287,7 +287,8 @@ impl ApiClient {
         hash: [u8; 16],
         key: &str,
     ) -> Result<(), Error> {
-        self.client
+        let response = self
+            .client
             .post(self.url(format!("/demos/{}/url", demo_id))?)
             .form(&[
                 ("hash", hex::encode(hash).as_str()),
@@ -297,8 +298,13 @@ impl ApiClient {
                 ("key", key),
             ])
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(Error::DemoNotFound(demo_id));
+        }
+
+        response.error_for_status()?;
 
         Ok(())
     }
