@@ -41,34 +41,55 @@ impl Default for ApiClient {
 impl Debug for ApiClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("ApiClient")
-            .field("base_url", &self.base_url.to_string())
+            .field("base_url", &format_args!("{}", self.base_url))
             .finish_non_exhaustive()
     }
 }
 
 impl ApiClient {
-    pub const DEMOS_TF_BASE_URL: &'static str = "https://api.demos.tf";
+    pub const DEMOS_TF_BASE_URL: &'static str = "https://api.demos.tf/";
 
     /// Create an api client for the default demos.tf endpoint
+    #[must_use]
     pub fn new() -> Self {
-        ApiClient::with_base_url(ApiClient::DEMOS_TF_BASE_URL).unwrap()
+        ApiClient::with_base_url(ApiClient::DEMOS_TF_BASE_URL).unwrap_or_else(|_| unreachable!())
     }
 
     /// Create an api client using a different api endpoint
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the provided `base_url` is not a valid url
     pub fn with_base_url(base_url: impl IntoUrl) -> Result<Self, Error> {
         ApiClient::with_base_url_and_timeout(base_url, Duration::from_secs(15))
     }
 
-    /// Create an api client using a different api endpoint
+    /// Create an api client using a different api endpoint and timeout
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the provided `base_url` is not a valid url
     pub fn with_base_url_and_timeout(
         base_url: impl IntoUrl,
         timeout: Duration,
     ) -> Result<Self, Error> {
+        // ensure there is always a leading / to prevent unexpected behavior with url creation later
+        let mut base_url = base_url.into_url().map_err(|_| Error::InvalidBaseUrl)?;
+        if !base_url.path().ends_with("/") {
+            base_url.set_path(&format!("{}/", base_url.path()));
+        }
+
         Ok(ApiClient {
             base_timeout: timeout,
             client: Client::builder().timeout(timeout).build()?,
-            base_url: base_url.into_url().map_err(Error::InvalidBaseUrl)?,
+            base_url,
         })
+    }
+
+    fn url<P: AsRef<str>>(&self, path: P) -> Result<Url, Error> {
+        self.base_url
+            .join(path.as_ref())
+            .map_err(|_| Error::InvalidBaseUrl)
     }
 
     /// List demos with the provided options
@@ -95,22 +116,7 @@ impl ApiClient {
     /// ```
     #[instrument]
     pub async fn list(&self, params: ListParams, page: u32) -> Result<Vec<Demo>, Error> {
-        if page == 0 {
-            return Err(Error::InvalidPage);
-        }
-
-        let mut url = self.base_url.clone();
-        url.set_path("/demos");
-        Ok(self
-            .client
-            .get(url)
-            .query(&[("page", page)])
-            .query(&params)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
+        self.list_url(self.url("demos")?, params, page).await
     }
 
     /// List demos uploaded by a user with the provided options
@@ -143,12 +149,19 @@ impl ApiClient {
         params: ListParams,
         page: u32,
     ) -> Result<Vec<Demo>, Error> {
+        self.list_url(
+            self.url(format!("uploads/{}", u64::from(uploader)))?,
+            params,
+            page,
+        )
+        .await
+    }
+
+    async fn list_url(&self, url: Url, params: ListParams, page: u32) -> Result<Vec<Demo>, Error> {
         if page == 0 {
             return Err(Error::InvalidPage);
         }
 
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/uploads/{}", u64::from(uploader)));
         Ok(self
             .client
             .get(url)
@@ -185,9 +198,11 @@ impl ApiClient {
     /// ```
     #[instrument]
     pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/demos/{}", demo_id));
-        let response = self.client.get(url).send().await?;
+        let response = self
+            .client
+            .get(self.url(format!("/demos/{}", demo_id))?)
+            .send()
+            .await?;
 
         if response.status() == StatusCode::NOT_FOUND {
             return Err(Error::DemoNotFound(demo_id));
@@ -215,16 +230,17 @@ impl ApiClient {
     /// ```
     #[instrument]
     pub async fn get_user(&self, user_id: u32) -> Result<User, Error> {
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/users/{}", user_id));
-        Ok(self
+        let response = self
             .client
-            .get(url)
+            .get(self.url(format!("/users/{}", user_id))?)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(Error::UserNotFound(user_id));
+        }
+
+        Ok(response.error_for_status()?.json().await?)
     }
 
     /// List demos with the provided options
@@ -248,16 +264,17 @@ impl ApiClient {
     /// ```
     #[instrument]
     pub async fn get_chat(&self, demo_id: u32) -> Result<Vec<ChatMessage>, Error> {
-        let mut url = self.base_url.clone();
-        url.set_path(&format!("/demos/{}/chat", demo_id));
-        Ok(self
+        let response = self
             .client
-            .get(url)
+            .get(self.url(format!("/demos/{}/chat", demo_id))?)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
+            .await?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            return Err(Error::DemoNotFound(demo_id));
+        }
+
+        Ok(response.error_for_status()?.json().await?)
     }
 
     #[instrument]
@@ -270,11 +287,8 @@ impl ApiClient {
         hash: [u8; 16],
         key: &str,
     ) -> Result<(), Error> {
-        let mut api_url = self.base_url.clone();
-        api_url.set_path(&format!("/demos/{}/url", demo_id));
-
         self.client
-            .post(api_url)
+            .post(self.url(format!("/demos/{}/url", demo_id))?)
             .form(&[
                 ("hash", hex::encode(hash).as_str()),
                 ("backend", backend),
@@ -312,7 +326,7 @@ impl ApiClient {
 
         let resp = self
             .client
-            .post(self.base_url.join("/upload").unwrap())
+            .post(self.url("/upload")?)
             .multipart(form)
             .send()
             .await?
@@ -330,7 +344,7 @@ impl ApiClient {
 
     pub(crate) async fn download_demo(&self, url: &str, duration: u16) -> Result<Response, Error> {
         // set timeout to 1s per 60s (~1mb) with a minimum of 15s, scaled by an configured timeout (default 15s)
-        let timeout_scale = (duration as f32 / 60.0).max(15.0) / 15.0;
+        let timeout_scale = (f32::from(duration) / 60.0).max(15.0) / 15.0;
         let timeout = Duration::from_secs_f32(self.base_timeout.as_secs_f32() * timeout_scale);
         trace!(url = url, timeout = debug(timeout), "requesting demo file");
         Ok(self
@@ -341,4 +355,40 @@ impl ApiClient {
             .await?
             .error_for_status()?)
     }
+}
+
+#[test]
+fn test_url() {
+    assert_eq!(
+        "https://example.com/demos",
+        ApiClient::with_base_url("https://example.com")
+            .unwrap()
+            .url("demos")
+            .unwrap()
+            .to_string()
+    );
+    assert_eq!(
+        "https://example.com/demos",
+        ApiClient::with_base_url("https://example.com/")
+            .unwrap()
+            .url("demos")
+            .unwrap()
+            .to_string()
+    );
+    assert_eq!(
+        "https://example.com/sub/demos",
+        ApiClient::with_base_url("https://example.com/sub/")
+            .unwrap()
+            .url("demos")
+            .unwrap()
+            .to_string()
+    );
+    assert_eq!(
+        "https://example.com/sub/demos",
+        ApiClient::with_base_url("https://example.com/sub")
+            .unwrap()
+            .url("demos")
+            .unwrap()
+            .to_string()
+    );
 }

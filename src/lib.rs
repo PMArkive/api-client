@@ -18,8 +18,8 @@ mod client;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    #[error("Invalid base url: {0}")]
-    InvalidBaseUrl(reqwest::Error),
+    #[error("Invalid base url")]
+    InvalidBaseUrl,
     #[error("Request failed: {0}")]
     Request(reqwest::Error),
     #[error("Invalid page requested")]
@@ -34,6 +34,8 @@ pub enum Error {
     InvalidResponse(String),
     #[error("Demo {0} not found")]
     DemoNotFound(u32),
+    #[error("User {0} not found")]
+    UserNotFound(u32),
     #[error("Error while writing demo data")]
     Write(#[source] std::io::Error),
     #[error("Operation timed out")]
@@ -98,6 +100,7 @@ impl Demo {
     }
 
     /// Download a demo, returning a stream of chunks
+    #[instrument]
     pub async fn download(
         &self,
         client: &ApiClient,
@@ -147,6 +150,7 @@ pub enum UserRef {
 
 impl UserRef {
     /// Id of the user
+    #[must_use]
     pub fn id(&self) -> u32 {
         match self {
             UserRef::Id(id) | UserRef::User(User { id, .. }) => *id,
@@ -154,6 +158,7 @@ impl UserRef {
     }
 
     /// Return the stored user info if available
+    #[must_use]
     pub fn user(&self) -> Option<&User> {
         match self {
             UserRef::Id(_) => None,
@@ -272,7 +277,7 @@ pub enum ListOrder {
     Descending,
 }
 
-/// Gametype as recognized by demos.tf, HL, Prolander, 6s or 4v4
+/// Game type as recognized by demos.tf, HL, Prolander, 6s or 4v4
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum GameType {
     #[serde(rename = "hl")]
@@ -382,6 +387,7 @@ fn test_serialize_player_list() {
 }
 
 impl ListParams {
+    /// Specify the backend name to filter demos with
     #[must_use]
     pub fn with_backend(self, backend: impl Into<String>) -> Self {
         ListParams {
@@ -390,6 +396,7 @@ impl ListParams {
         }
     }
 
+    /// Specify the map name to filter demos with
     #[must_use]
     pub fn with_map(self, map: impl Into<String>) -> Self {
         ListParams {
@@ -398,6 +405,7 @@ impl ListParams {
         }
     }
 
+    /// Specify the player steam ids to filter demos with
     #[must_use]
     pub fn with_players<T: Into<SteamID>, I: IntoIterator<Item = T>>(self, players: I) -> Self {
         ListParams {
@@ -406,6 +414,7 @@ impl ListParams {
         }
     }
 
+    /// Specify the game type to filter demos with
     #[must_use]
     pub fn with_type(self, ty: GameType) -> Self {
         ListParams {
@@ -414,6 +423,7 @@ impl ListParams {
         }
     }
 
+    /// Specify the before date to filter demos with
     #[must_use]
     pub fn with_before(self, before: OffsetDateTime) -> Self {
         ListParams {
@@ -422,6 +432,7 @@ impl ListParams {
         }
     }
 
+    /// Specify the after date to filter demos with
     #[must_use]
     pub fn with_after(self, after: OffsetDateTime) -> Self {
         ListParams {
@@ -430,6 +441,7 @@ impl ListParams {
         }
     }
 
+    /// Specify the sort
     #[must_use]
     pub fn with_order(self, order: ListOrder) -> Self {
         ListParams { order, ..self }
