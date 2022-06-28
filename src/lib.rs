@@ -324,6 +324,8 @@ pub struct ListParams {
     after: Option<OffsetDateTime>,
     #[serde(serialize_with = "serialize_option_time")]
     before: Option<OffsetDateTime>,
+    before_id: Option<u64>,
+    after_id: Option<u64>,
 }
 
 fn serialize_option_time<S>(dt: &Option<OffsetDateTime>, serializer: S) -> Result<S::Ok, S::Error>
@@ -437,6 +439,24 @@ impl ListParams {
     pub fn with_after(self, after: OffsetDateTime) -> Self {
         ListParams {
             after: Some(after),
+            ..self
+        }
+    }
+
+    /// Specify the maximum demo id to filter demos with
+    #[must_use]
+    pub fn with_before_id(self, before: u64) -> Self {
+        ListParams {
+            before_id: Some(before),
+            ..self
+        }
+    }
+
+    /// Specify the minimum demo id to filter demos with
+    #[must_use]
+    pub fn with_after_id(self, after: u64) -> Self {
+        ListParams {
+            after_id: Some(after),
             ..self
         }
     }

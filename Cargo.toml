@@ -1,6 +1,6 @@
 [package]
 name = "demostf-client"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 description = "Api client for demos.tf"
@@ -26,7 +26,7 @@ md5 = "0.7.0"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
-sqlx = { version = "0.5", features = ["postgres", "runtime-tokio-rustls"] }
+sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-rustls"] }
 tracing-subscriber = { version = "0.3.11", features = ["env-filter"] }
 
 [features]
