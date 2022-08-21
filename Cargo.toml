@@ -1,6 +1,6 @@
 [package]
 name = "demostf-client"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 description = "Api client for demos.tf"
@@ -12,22 +12,22 @@ keywords = ["tf2", "demo"]
 categories = ["api-bindings"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-time = { version = "0.3", features = ["serde"] }
-reqwest = { version = "0.11", default-features = false, features = ["json", "multipart", "stream"] }
-thiserror = "1"
-hex = "0.4"
-steamid-ng = "1"
-bytes = "1.1.0"
-futures-util = "0.3.21"
-tracing = "0.1.33"
-tinyvec = "1.5.1"
+serde = { version = "1.0.144", features = ["derive"] }
+time = { version = "0.3.13", features = ["serde"] }
+reqwest = { version = "0.11.11", default-features = false, features = ["json", "multipart", "stream"] }
+thiserror = "1.0.32"
+hex = "0.4.3"
+steamid-ng = "1.0.0"
+bytes = "1.2.1"
+futures-util = "0.3.23"
+tracing = "0.1.36"
+tinyvec = "1.6.0"
 md5 = "0.7.0"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros"] }
-sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-rustls"] }
-tracing-subscriber = { version = "0.3.11", features = ["env-filter"] }
+tokio = { version = "1.20.1", features = ["macros"] }
+sqlx = { version = "0.6.1", features = ["postgres", "runtime-tokio-rustls"] }
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 
 [features]
 default = ["default-tls"]

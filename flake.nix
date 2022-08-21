@@ -15,7 +15,7 @@
       naersk-lib = naersk.lib."${system}";
     in rec {
       devShell = pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [rustc cargo bacon pkg-config];
+        nativeBuildInputs = with pkgs; [rustc cargo bacon pkg-config cargo-edit cargo-outdated];
         buildInputs = with pkgs; [ openssl ];
       };
     });
