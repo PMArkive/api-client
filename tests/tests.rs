@@ -59,6 +59,18 @@ async fn setup() {
     let client = ApiClient::with_base_url(&api_root).unwrap();
 
     upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
+
+    let mut transaction = pool.begin().await.unwrap();
+
+    let views = ["map_list", "name_list", "users_named"];
+    for view in views {
+        sqlx::query(&format!("REFRESH MATERIALIZED VIEW {}", view))
+            .execute(&mut transaction)
+            .await
+            .unwrap();
+    }
+
+    transaction.commit().await.unwrap();
 }
 
 async fn test_client() -> ApiClient {
@@ -326,6 +338,15 @@ async fn test_list_players() {
         .await
         .unwrap();
     assert_eq!(demos.len(), 0);
+}
+
+#[tokio::test]
+async fn test_search_players() {
+    let client = test_client().await;
+
+    let user = client.search_users("freak").await.unwrap();
+    assert_eq!(user.len(), 1);
+    assert_eq!(user[0].steam_id, SteamID::from(76561198010628997));
 }
 
 #[tokio::test]

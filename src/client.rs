@@ -1,5 +1,6 @@
 use crate::{ChatMessage, Demo, Error, ListParams, User};
 use reqwest::{multipart, Client, IntoUrl, Response, StatusCode, Url};
+use std::borrow::Borrow;
 use std::fmt::{self, Debug, Formatter};
 use std::str::FromStr;
 use std::time::Duration;
@@ -90,6 +91,22 @@ impl ApiClient {
         self.base_url
             .join(path.as_ref())
             .map_err(|_| Error::InvalidBaseUrl)
+    }
+
+    fn url_with_params<P, I, K, V>(&self, path: P, iter: I) -> Result<Url, Error>
+    where
+        P: AsRef<str>,
+        I: IntoIterator,
+        I::Item: Borrow<(K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let mut url = self
+            .base_url
+            .join(path.as_ref())
+            .map_err(|_| Error::InvalidBaseUrl)?;
+        url.query_pairs_mut().extend_pairs(iter);
+        Ok(url)
     }
 
     /// List demos with the provided options
@@ -239,6 +256,36 @@ impl ApiClient {
         if response.status() == StatusCode::NOT_FOUND {
             return Err(Error::UserNotFound(user_id));
         }
+
+        Ok(response.error_for_status()?.json().await?)
+    }
+
+    /// Search for players by name
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use demostf_client::ApiClient;
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), demostf_client::Error> {
+    /// let client = ApiClient::default();
+    /// #
+    /// let users = client.search_users("icewind").await?;
+    ///
+    /// for user in users {
+    ///   println!("{} ({})", user.name, user.steam_id.steam3());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[instrument]
+    pub async fn search_users(&self, name: &str) -> Result<Vec<User>, Error> {
+        let response = self
+            .client
+            .get(self.url_with_params("/users/search", [("query", name)])?)
+            .send()
+            .await?;
 
         Ok(response.error_for_status()?.json().await?)
     }
