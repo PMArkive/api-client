@@ -270,10 +270,11 @@ pub struct ChatMessage {
 }
 
 /// Order for listing demos
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Default)]
 #[serde(into = "&str")]
 pub enum ListOrder {
     Ascending,
+    #[default]
     Descending,
 }
 
@@ -288,12 +289,6 @@ pub enum GameType {
     Sixes,
     #[serde(rename = "4v4")]
     Fours,
-}
-
-impl Default for ListOrder {
-    fn default() -> Self {
-        ListOrder::Descending
-    }
 }
 
 impl Display for ListOrder {

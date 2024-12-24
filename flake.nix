@@ -6,8 +6,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     mill-scale = {
-      # url = "github:icewind1991/mill-scale";
-      url = "path:/home/robin/Projects/mill-scale";
+      url = "github:icewind1991/mill-scale";
       inputs.flakelight.follows = "flakelight";
     };
   };
