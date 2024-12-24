@@ -28,7 +28,7 @@ pub enum Error {
     InvalidApiKey,
     #[error("Hash mismatch")]
     HashMisMatch,
-    #[error("Unknown server error")]
+    #[error("Unknown server error {0}")]
     ServerError(u16),
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
