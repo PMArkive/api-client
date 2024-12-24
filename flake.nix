@@ -1,22 +1,25 @@
 {
   inputs = {
-    utils.url = "github:numtide/flake-utils";
-    naersk.url = "github:nix-community/naersk";
+    nixpkgs.url = "nixpkgs/nixos-24.11";
+    flakelight = {
+      url = "github:nix-community/flakelight";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    mill-scale = {
+      # url = "github:icewind1991/mill-scale";
+      url = "path:/home/robin/Projects/mill-scale";
+      inputs.flakelight.follows = "flakelight";
+    };
   };
-
-  outputs = {
-    self,
-    nixpkgs,
-    utils,
-    naersk,
-  }:
-    utils.lib.eachDefaultSystem (system: let
-      pkgs = nixpkgs.legacyPackages."${system}";
-      naersk-lib = naersk.lib."${system}";
-    in rec {
-      devShell = pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [rustc cargo bacon pkg-config cargo-edit cargo-outdated];
-        buildInputs = with pkgs; [ openssl ];
+  outputs = {mill-scale, ...}:
+    mill-scale ./. {
+      cargoTest = false;
+      withOverlays = [(import ./nix/overlay.nix)];
+      packages = {
+        test-runner = pkgs: pkgs.test-runner;
       };
-    });
+      checks = {
+        test = pkgs: pkgs.nixosTest (import ./nix/test.nix);
+      };
+    };
 }

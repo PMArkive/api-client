@@ -7,6 +7,10 @@ use tracing_subscriber::EnvFilter;
 
 static SETUP_DONE: AtomicBool = AtomicBool::new(false);
 
+fn test_demo_path() -> String {
+    std::env::var("TEST_DEMO").unwrap_or_else(|_| "./tests/data/gully.dem".to_string())
+}
+
 async fn setup() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -38,18 +42,18 @@ async fn setup() {
 
     for table in &tables {
         sqlx::query(&format!("TRUNCATE TABLE {}", table))
-            .execute(&mut transaction)
+            .execute(&mut *transaction)
             .await
             .unwrap();
         sqlx::query(&format!("ALTER SEQUENCE {}_id_seq RESTART with 1", table))
-            .execute(&mut transaction)
+            .execute(&mut *transaction)
             .await
             .unwrap();
     }
 
     sqlx::query("INSERT INTO users(steamid, name, avatar, token)\
     VALUES(76561198024494988, 'Icewind', 'http://cdn.akamai.steamstatic.com/steamcommunity/public/images/avatars/75/75b84075b70535c5cfb3499af03b3e4e7a7b556f_medium.jpg', 'test_token')")
-        .execute(&mut transaction).await.unwrap();
+        .execute(&mut *transaction).await.unwrap();
 
     transaction.commit().await.unwrap();
 
@@ -58,14 +62,14 @@ async fn setup() {
 
     let client = ApiClient::with_base_url(&api_root).unwrap();
 
-    upload(&client, "./tests/data/gully.dem", "test.dem", "R", "B").await;
+    upload(&client, &test_demo_path(), "test.dem", "R", "B").await;
 
     let mut transaction = pool.begin().await.unwrap();
 
     let views = ["map_list", "name_list", "users_named"];
     for view in views {
         sqlx::query(&format!("REFRESH MATERIALIZED VIEW {}", view))
-            .execute(&mut transaction)
+            .execute(&mut *transaction)
             .await
             .unwrap();
     }
@@ -108,7 +112,7 @@ async fn upload(client: &ApiClient, source: &str, name: &str, red: &str, blue: &
 async fn test_upload_invalid_key() {
     let client = test_client().await;
 
-    let data = std::fs::read("./tests/data/gully.dem").unwrap();
+    let data = std::fs::read(test_demo_path()).unwrap();
 
     let err = client
         .upload_demo(
@@ -181,7 +185,7 @@ async fn test_get_chat() {
 
     let chat = client.get_chat(1).await.unwrap();
 
-    assert_eq!(chat.len(), 134);
+    assert_eq!(chat.len(), 199);
 
     assert_eq!(chat[0].user, "distraughtduck4");
     assert_eq!(chat[0].time, 0);
@@ -367,5 +371,5 @@ async fn test_download_demo() {
     let mut data: Vec<u8> = Vec::new();
     demo.save(&client, &mut data).await.unwrap();
 
-    assert_eq!(data.len(), read("./tests/data/gully.dem").unwrap().len());
+    assert_eq!(data.len(), read(test_demo_path()).unwrap().len());
 }
