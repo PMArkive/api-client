@@ -15,8 +15,8 @@ in
     src = fetchFromGitHub {
       owner = "demostf";
       repo = "api";
-      rev = "1a8380360b993226ae1c6fcc226011e03a6c1467";
-      hash = "sha256-JcBRU1N44tt0QDLnj6z9MCT3V2s2dkf+JbpWb1rmXnY=";
+      rev = "9595b7f6f520fffb6e31c31c08d897b5b7593574";
+      hash = "sha256-HncThFvIQ02QD8jpdsj70kvE+OlVO/loKM3hCVgJ2tk=";
     };
 
     vendorHash = "sha256-EYWCR2aJAoyWvEX+SML4Fb3F3KGcUtwCgqhAGT6ZjZ4=";

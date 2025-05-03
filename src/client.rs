@@ -378,11 +378,38 @@ impl ApiClient {
         blue: String,
         key: String,
     ) -> Result<u32, Error> {
+        self.upload_maybe_private_demo(file_name, body, red, blue, key, false)
+            .await
+    }
+
+    #[instrument(skip(body))]
+    pub async fn upload_private_demo(
+        &self,
+        file_name: String,
+        body: Vec<u8>,
+        red: String,
+        blue: String,
+        key: String,
+    ) -> Result<u32, Error> {
+        self.upload_maybe_private_demo(file_name, body, red, blue, key, true)
+            .await
+    }
+
+    async fn upload_maybe_private_demo(
+        &self,
+        file_name: String,
+        body: Vec<u8>,
+        red: String,
+        blue: String,
+        key: String,
+        private: bool,
+    ) -> Result<u32, Error> {
         let form = multipart::Form::new()
             .text("red", red)
             .text("blue", blue)
             .text("name", file_name)
-            .text("key", key);
+            .text("key", key)
+            .text("private", if private { "1" } else { "0" });
 
         let file = multipart::Part::bytes(body)
             .file_name("demo.dem")

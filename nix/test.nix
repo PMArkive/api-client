@@ -108,7 +108,7 @@
     testBinary = lib.getExe pkgs.test-runner;
     initSql = pkgs.fetchurl {
       url = "https://github.com/demostf/db/raw/refs/heads/master/schema.sql";
-      hash = "sha256-AwXN9mh9CRk6HWdvyUR+YdBkpmExNIDOIeDMz6XqjEQ=";
+      hash = "sha256-tdMYDxlvpuQRxHglX46sCldxzsh1cDxkch2lGWnFH8E=";
     };
   in ''
     machine.succeed("mkdir /demos && chmod 0777 /demos");
