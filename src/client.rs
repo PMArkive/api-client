@@ -31,6 +31,7 @@ pub struct ApiClient {
     base_timeout: Duration,
     client: Client,
     base_url: Url,
+    access_key: Option<String>,
 }
 
 impl Default for ApiClient {
@@ -84,7 +85,13 @@ impl ApiClient {
             base_timeout: timeout,
             client: Client::builder().timeout(timeout).build()?,
             base_url,
+            access_key: None,
         })
+    }
+
+    /// Set access key used to access private demos
+    pub fn set_access_key(&mut self, access_key: String) {
+        self.access_key = Some(access_key);
     }
 
     fn url<P: AsRef<str>>(&self, path: P) -> Result<Url, Error> {
@@ -179,9 +186,13 @@ impl ApiClient {
             return Err(Error::InvalidPage);
         }
 
-        Ok(self
-            .client
-            .get(url)
+        let mut req = self.client.get(url);
+
+        if let Some(access_key) = &self.access_key {
+            req = req.header("ACCESS_KEY", access_key.as_str());
+        }
+
+        Ok(req
             .query(&[("page", page)])
             .query(&params)
             .send()
@@ -215,11 +226,13 @@ impl ApiClient {
     /// ```
     #[instrument]
     pub async fn get(&self, demo_id: u32) -> Result<Demo, Error> {
-        let response = self
-            .client
-            .get(self.url(format!("/demos/{}", demo_id))?)
-            .send()
-            .await?;
+        let mut req = self.client.get(self.url(format!("/demos/{}", demo_id))?);
+
+        if let Some(access_key) = &self.access_key {
+            req = req.header("ACCESS-KEY", access_key.as_str());
+        }
+
+        let response = req.send().await?;
 
         if response.status() == StatusCode::NOT_FOUND {
             return Err(Error::DemoNotFound(demo_id));
