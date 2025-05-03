@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "demostf-client"
-version = "0.5.0"
+version = "0.4.6"
 dependencies = [
  "bytes",
  "futures-util",
